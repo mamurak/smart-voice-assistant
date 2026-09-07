@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build the web UI + Supertonic images locally and push them to a registry
-# (e.g. quay.io) — for clusters WITHOUT an internal image registry (bare-metal /
-# disconnected). Then deploy with:
+# Build the web UI image locally and push it to a registry (e.g. quay.io) — for
+# clusters WITHOUT an internal image registry (bare-metal / disconnected).
+# Then deploy with:
 #   ./full-install.sh -n <ns> --registry <REPO>
 #
 # Usage:
@@ -27,21 +27,16 @@ done
 TOOL="$(basename "$TOOL")"
 
 WEBUI="$REPO/smart-voice-assistant:$TAG"
-TTS="$REPO/supertonic:$TAG"
 
 echo "▶ Building web UI ($PLATFORM) → $WEBUI"
 $TOOL build --platform "$PLATFORM" -t "$WEBUI" -f "$ROOT/Dockerfile" "$ROOT"
-echo "▶ Building Supertonic ($PLATFORM) → $TTS"
-$TOOL build --platform "$PLATFORM" -t "$TTS" -f "$ROOT/supertonic/Dockerfile" "$ROOT/supertonic"
 
 echo "▶ Pushing"
 $TOOL push "$WEBUI"
-$TOOL push "$TTS"
 
 echo ""
 echo "✅ Pushed:"
 echo "   $WEBUI"
-echo "   $TTS"
 echo ""
 echo "Deploy with:  ./full-install.sh -n <namespace> --registry $REPO"
 echo "(If the repos are PRIVATE, the installer creates a pull secret from your"

@@ -32,14 +32,11 @@ DEFAULT_CONFIG = {
     "services": {
         "stt": {"name": "whisper-large-v3-turbo", "endpoint": "", "token": ""},
         "llm": {"name": "ministral-3-3b-instruct", "endpoint": "", "token": ""},
-        # TTS = Supertonic 3 (31 languages), native /v1/tts.
         "tts": {
-            "name": "supertonic-3",
-            "endpoint": "http://127.0.0.1:7788/v1/tts",
+            "name": "omnivoice",
+            "endpoint": "http://127.0.0.1:8080/v1",
             "token": "",
-            "api": "native",   # native (/v1/tts) | openai (/v1/audio/speech)
-            "format": "wav",   # wav | flac | ogg  (Supertonic does NOT do mp3)
-            "speed": "1.0",
+            "format": "wav",
         },
     },
 }
@@ -56,9 +53,7 @@ ENV_MAP = {
     "SVA_TTS_MODEL":    ("services", "tts", "name"),
     "SVA_TTS_ENDPOINT": ("services", "tts", "endpoint"),
     "SVA_TTS_TOKEN":    ("services", "tts", "token"),
-    "SVA_TTS_API":      ("services", "tts", "api"),
     "SVA_TTS_FORMAT":   ("services", "tts", "format"),
-    "SVA_TTS_SPEED":    ("services", "tts", "speed"),
 }
 
 
@@ -197,34 +192,23 @@ def write_config(cfg):
 
 
 # ----------------------------------------------------------------------
-# TTS proxy — forwards {text, lang, voice} to Supertonic 3.
+# TTS proxy — forwards {text} to OmniVoice via /v1/audio/speech.
 # Keeps the endpoint token server-side and dodges browser CORS.
 # ----------------------------------------------------------------------
 _FMT_CTYPE = {"wav": "audio/wav", "flac": "audio/flac", "ogg": "audio/ogg"}
 
 
-def synth_tts(cfg_tts, text, lang, voice):
-    """Call Supertonic and return (audio_bytes, content_type). Raises on error."""
-    endpoint = (cfg_tts.get("endpoint") or "http://127.0.0.1:7788/v1/tts").rstrip("/")
-    api = (cfg_tts.get("api") or "native").lower()
+def synth_tts(cfg_tts, text, lang):
+    """Call TTS backend and return (audio_bytes, content_type). Raises on error."""
+    endpoint = (cfg_tts.get("endpoint") or "http://127.0.0.1:8080/v1").rstrip("/")
     fmt = (cfg_tts.get("format") or "wav").lower()
-    try:
-        speed = float(cfg_tts.get("speed") or 1.0)
-    except (TypeError, ValueError):
-        speed = 1.0
 
-    if api == "openai":
-        url = endpoint if "/audio/speech" in endpoint else endpoint + "/v1/audio/speech"
-        body = {
-            "model": cfg_tts.get("name") or "supertonic-3",
-            "input": text,
-            "voice": voice,
-            "response_format": fmt,
-            "speed": speed,
-        }
-    else:  # native /v1/tts — documented fields only: text, voice, lang
-        url = endpoint if "/v1/tts" in endpoint else endpoint + "/v1/tts"
-        body = {"text": text, "voice": voice, "lang": lang}
+    url = endpoint if "/audio/speech" in endpoint else endpoint + "/audio/speech"
+    body = {
+        "model": cfg_tts.get("name") or "omnivoice",
+        "input": text,
+        "response_format": fmt,
+    }
 
     req = urllib.request.Request(
         url, data=json.dumps(body).encode("utf-8"), method="POST"
@@ -326,12 +310,11 @@ class Handler(BaseHTTPRequestHandler):
             if not text:
                 return self._json(400, {"error": "missing 'text'"})
             lang = payload.get("lang") or "en"
-            voice = payload.get("voice") or "M1"
             cfg_tts = read_config()["services"]["tts"]
             if not cfg_tts.get("endpoint"):
                 return self._json(400, {"error": "TTS endpoint not configured — set it in Settings"})
             try:
-                audio, ctype = synth_tts(cfg_tts, text, lang, voice)
+                audio, ctype = synth_tts(cfg_tts, text, lang)
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", "replace")[:400]
                 return self._json(exc.code, {"error": f"TTS service {exc.code}: {detail}"})

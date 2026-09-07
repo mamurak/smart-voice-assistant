@@ -6,8 +6,8 @@ _Last updated: 2026-08-02_
 
 | Script | Does |
 |--------|------|
-| `full-install.sh` | Models + Supertonic + web UI, wires endpoints, tests every component |
-| `app-install.sh` | Supertonic + web UI only (no models), wires TTS |
+| `full-install.sh` | Models (STT+LLM+TTS) + web UI, wires endpoints, tests every component |
+| `app-install.sh` | Web UI only (no models), wires endpoints |
 | `full-uninstall.sh` / `app-uninstall.sh` | Remove with/without models |
 | `status.sh` / `gpu-status.sh` | Status snapshot / GPU inventory |
 | `build-push.sh` | Build + push app images to a registry (`--platform linux/amd64` default) |
@@ -30,7 +30,7 @@ Preflight auto-detects which is possible (reports internal-registry
 
 ## Parallel by default
 
-`deploy_all()` backgrounds models + Supertonic + web UI so builds overlap the
+`deploy_all()` backgrounds models + web UI so the web-UI build overlaps the
 model pull (wall-clock ≈ slowest component, not the sum). Prints combined status
 every `STATUS_EVERY` (30s); always returns 0 so a single failure surfaces in the
 component test, not an abort. `--sequential` opts out.
@@ -44,8 +44,7 @@ pushed image won't roll out over a *healthy* pod without `--force` (or
 
 ## Manifest invariants (don't regress — see troubleshooting.md)
 
-- `supertonic.yaml`: `SUPERTONIC_INTRA_OP_THREADS` == `limits.cpu`;
-  `imagePullPolicy: Always`; `strategy: Recreate`; weights baked in the image.
+- `models/tts.yaml`: KServe `InferenceService` for OmniVoice (vllm-omni, GPU).
 - `webui.yaml`: `imagePullPolicy: Always`; `strategy: Recreate`; Route
   `haproxy.router.openshift.io/timeout: 120s`.
 

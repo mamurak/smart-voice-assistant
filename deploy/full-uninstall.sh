@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full uninstall: remove the web UI, Supertonic, AND the STT/LLM models.
+# Full uninstall: remove the web UI AND all models (STT/LLM/TTS).
 #
 #   ./full-uninstall.sh [-n NAMESPACE]
 set -euo pipefail

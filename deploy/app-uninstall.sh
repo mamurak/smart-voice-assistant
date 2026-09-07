@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# App-only uninstall: remove the web UI + Supertonic, LEAVE the models running.
+# App-only uninstall: remove the web UI, LEAVE the models running.
 #
 #   ./app-uninstall.sh [-n NAMESPACE]
 set -euo pipefail

@@ -45,10 +45,8 @@ parse_args() {
   done
   # Resolve prebuilt images: explicit env wins, else derive from --registry.
   WEBUI_IMAGE="${SVA_WEBUI_IMAGE:-$WEBUI_IMAGE}"
-  TTS_IMAGE="${SVA_TTS_IMAGE:-$TTS_IMAGE}"
   if [ -n "$REGISTRY" ]; then
     [ -z "$WEBUI_IMAGE" ] && WEBUI_IMAGE="$REGISTRY/smart-voice-assistant:latest"
-    [ -z "$TTS_IMAGE" ]   && TTS_IMAGE="$REGISTRY/supertonic:latest"
   fi
 }
 resolve_ns() {
@@ -77,7 +75,7 @@ preflight() { :; }
 status_snapshot() {
   printf "%s┈┈ install status @ %s ┈┈%s\n" "$DIM" "$(date +%H:%M:%S)" "$RST"
   local isvc ready pod phase reason d rd
-  for isvc in whisper-large-v3 ministral-3-3b-instruct; do
+  for isvc in whisper-large-v3 ministral-3-3b-instruct omnivoice; do
     oc get isvc "$isvc" -n "$NS" >/dev/null 2>&1 || continue
     ready="$(oc get isvc "$isvc" -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
     pod="$(oc get pods -n "$NS" -l serving.kserve.io/inferenceservice="$isvc" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
@@ -87,16 +85,14 @@ status_snapshot() {
     else phase="no-pod"; reason="pending scheduling"; fi
     printf "   %-26s ready=%-6s pod=%-11s %s\n" "$isvc" "${ready:-?}" "${phase:-?}" "$reason"
   done
-  for d in supertonic smart-voice-assistant; do
-    if oc get deploy "$d" -n "$NS" >/dev/null 2>&1; then
-      rd="$(oc get deploy "$d" -n "$NS" -o jsonpath='{.status.readyReplicas}/{.spec.replicas}' 2>/dev/null || true)"
-      printf "   %-26s ready=%s\n" "$d" "${rd:-0/0}"
-    else
-      local bp
-      bp="$(oc get build -n "$NS" -l buildconfig="$d" -o jsonpath='{.items[-1:].status.phase}' 2>/dev/null || true)"
-      [ -n "$bp" ] && printf "   %-26s build=%s\n" "$d" "$bp"
-    fi
-  done
+  if oc get deploy smart-voice-assistant -n "$NS" >/dev/null 2>&1; then
+    rd="$(oc get deploy smart-voice-assistant -n "$NS" -o jsonpath='{.status.readyReplicas}/{.spec.replicas}' 2>/dev/null || true)"
+    printf "   %-26s ready=%s\n" "smart-voice-assistant" "${rd:-0/0}"
+  else
+    local bp
+    bp="$(oc get build -n "$NS" -l buildconfig=smart-voice-assistant -o jsonpath='{.items[-1:].status.phase}' 2>/dev/null || true)"
+    [ -n "$bp" ] && printf "   %-26s build=%s\n" "smart-voice-assistant" "$bp"
+  fi
 }
 MONITOR_PID=""
 start_monitor() {  # prints a snapshot now, then every 5 minutes until stopped
@@ -125,12 +121,13 @@ diagnose_model() {
 wait_models() {
   local deadline=$(( $(date +%s) + MODEL_TIMEOUT )) m rc
   while :; do
-    local wr mr; wr=""; mr=""
+    local wr mr tr; wr=""; mr=""; tr=""
     wr="$(oc get isvc whisper-large-v3        -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
     mr="$(oc get isvc ministral-3-3b-instruct -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
-    [ "$wr" = "True" ] && [ "$mr" = "True" ] && return 0
+    tr="$(oc get isvc omnivoice              -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
+    [ "$wr" = "True" ] && [ "$mr" = "True" ] && [ "$tr" = "True" ] && return 0
     local crashed=""
-    for m in whisper-large-v3 ministral-3-3b-instruct; do
+    for m in whisper-large-v3 ministral-3-3b-instruct omnivoice; do
       rc="$(oc get pods -n "$NS" -l serving.kserve.io/inferenceservice="$m" -o jsonpath='{.items[-1:].status.containerStatuses[?(@.name=="kserve-container")].restartCount}' 2>/dev/null || true)"
       [ "${rc:-0}" -ge 3 ] 2>/dev/null && crashed="$crashed $m"
     done
@@ -139,18 +136,18 @@ wait_models() {
     fi
     if [ "$(date +%s)" -ge "$deadline" ]; then
       bad "Timed out after ${MODEL_TIMEOUT}s waiting for models:"
-      diagnose_model whisper-large-v3; diagnose_model ministral-3-3b-instruct; return 1
+      diagnose_model whisper-large-v3; diagnose_model ministral-3-3b-instruct; diagnose_model omnivoice; return 1
     fi
     sleep 15
   done
 }
 
-# ---------- models (STT + LLM) ----------
+# ---------- models (STT + LLM + TTS) ----------
 deploy_models() {
   # Per-model: keep any model that's already Ready (a re-pull is slow and yields
   # the same result). --force redeploys regardless.
   local m ready todo=()
-  for m in whisper-large-v3 ministral-3-3b-instruct; do
+  for m in whisper-large-v3 ministral-3-3b-instruct omnivoice; do
     ready="$(oc get isvc "$m" -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
     if [ "$ready" = "True" ] && [ "$FORCE" != "1" ]; then
       ok "$m already Ready — keeping it (use --force to re-pull)"
@@ -158,7 +155,7 @@ deploy_models() {
       todo+=("$m")
     fi
   done
-  if [ "${#todo[@]}" -eq 0 ]; then ok "Both models already Ready — nothing to do"; return 0; fi
+  if [ "${#todo[@]}" -eq 0 ]; then ok "All models already Ready — nothing to do"; return 0; fi
 
   # Correct vLLM image for THIS cluster (avoids CUDA-803 / unknown-arch crashes).
   local vllm_img="${SVA_VLLM_IMAGE:-}"
@@ -166,8 +163,9 @@ deploy_models() {
     vllm_img="$(oc get template vllm-cuda-runtime-template -n redhat-ods-applications -o jsonpath='{.objects[0].spec.containers[0].image}' 2>/dev/null || true)"
   fi
 
-  step "Models — ensuring ServingRuntime"
+  step "Models — ensuring ServingRuntimes"
   oc apply -n "$NS" -f "$HERE/models/serving-runtime.yaml" >/dev/null
+  oc apply -n "$NS" -f "$HERE/models/vllm-omni-serving-runtime.yaml" >/dev/null
   if [ -n "$vllm_img" ]; then
     if oc patch servingruntime vllm-cuda -n "$NS" --type=json \
          -p "[{\"op\":\"replace\",\"path\":\"/spec/containers/0/image\",\"value\":\"$vllm_img\"}]" >/dev/null 2>&1; then
@@ -190,7 +188,11 @@ deploy_models() {
   # (Re)deploy only the models that need it.
   for m in "${todo[@]}"; do
     local f
-    case "$m" in whisper-large-v3) f=whisper-stt.yaml ;; *) f=ministral-llm.yaml ;; esac
+    case "$m" in
+      whisper-large-v3) f=whisper-stt.yaml ;;
+      omnivoice) f=tts.yaml ;;
+      *) f=ministral-llm.yaml ;;
+    esac
     step "Model $m — (re)deploying"
     oc delete -n "$NS" -f "$HERE/models/$f" --ignore-not-found >/dev/null 2>&1 || true
     oc apply  -n "$NS" -f "$HERE/models/$f" >/dev/null
@@ -205,18 +207,20 @@ deploy_models() {
   start_monitor
   local rc=0; wait_models || rc=1
   stop_monitor
-  if [ "$rc" -eq 0 ]; then ok "Whisper STT + Ministral LLM Ready"
+  if [ "$rc" -eq 0 ]; then ok "Whisper STT + Ministral LLM + OmniVoice TTS Ready"
   else bad "Models did not reach Ready — see the diagnosis above."; fi
 }
 uninstall_models() {
-  step "Removing models (Whisper + Ministral + ServingRuntime)"
+  step "Removing models (Whisper + Ministral + OmniVoice + ServingRuntimes)"
   oc delete -n "$NS" -f "$HERE/models/whisper-stt.yaml" \
                      -f "$HERE/models/ministral-llm.yaml" \
-                     -f "$HERE/models/serving-runtime.yaml" --ignore-not-found
+                     -f "$HERE/models/tts.yaml" \
+                     -f "$HERE/models/serving-runtime.yaml" \
+                     -f "$HERE/models/vllm-omni-serving-runtime.yaml" --ignore-not-found
   ok "Models removed"
 }
 
-# ---------- app (Supertonic TTS + web UI) ----------
+# ---------- app (web UI) ----------
 # Skip a rebuild when the deployment is already running, unless --force.
 deployment_healthy() { [ "$(oc get deploy "$1" -n "$NS" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)" -ge 1 ] 2>/dev/null; }
 
@@ -238,7 +242,7 @@ ensure_pull_secret() {
 }
 
 # Deploy a component from a prebuilt image (no on-cluster build).
-# $1=component (supertonic|smart-voice-assistant) $2=container $3=image $4=extra manifest file
+# $1=component (smart-voice-assistant) $2=container $3=image $4=extra manifest file
 deploy_prebuilt() {
   local comp="$1" ctr="$2" img="$3" mf="$4"
   step "$comp — deploy prebuilt image ($img)"
@@ -255,19 +259,6 @@ deploy_prebuilt() {
   ok "$comp deployed (prebuilt)"
 }
 
-deploy_supertonic() {
-  if [ "$FORCE" != "1" ] && deployment_healthy supertonic; then
-    ok "Supertonic already running — keeping it (use --force to rebuild)"; return 0
-  fi
-  if [ -n "$TTS_IMAGE" ]; then deploy_prebuilt supertonic tts "$TTS_IMAGE" "$HERE/supertonic.yaml"; return; fi
-  step "Supertonic (TTS) — removing any existing install first (idempotent)"
-  oc delete -n "$NS" -f "$HERE/supertonic.yaml" --ignore-not-found >/dev/null 2>&1 || true
-  step "Supertonic (TTS) — build image on-cluster + deploy"
-  oc apply -n "$NS" -f "$HERE/supertonic.yaml" >/dev/null
-  oc start-build supertonic --from-dir="$ROOT/supertonic" --follow -n "$NS"
-  oc rollout status deploy/supertonic -n "$NS" --timeout=300s
-  ok "Supertonic deployed"
-}
 deploy_webui() {
   if [ "$FORCE" != "1" ] && deployment_healthy smart-voice-assistant; then
     ok "Web UI already running — keeping it (use --force to rebuild new code)"; return 0
@@ -282,33 +273,30 @@ deploy_webui() {
   ok "Web UI deployed"
 }
 uninstall_app() {
-  step "Removing web UI + Supertonic"
+  step "Removing web UI"
   oc delete -n "$NS" -f "$HERE/webui.yaml" --ignore-not-found
-  oc delete -n "$NS" -f "$HERE/supertonic.yaml" --ignore-not-found
   ok "App removed"
 }
 
-# Deploy components. Parallel by default (Supertonic + web UI builds overlap the
-# model pull); --sequential runs them one-by-one with inline logs. Always
-# returns 0 — per-component failures are reported and surface in the tests.
-#   deploy_all models   → models + Supertonic + web UI
-#   deploy_all          → Supertonic + web UI only (app-install)
+# Deploy components. Parallel by default (web UI build overlaps the model pull);
+# --sequential runs them one-by-one with inline logs. Always returns 0 —
+# per-component failures are reported and surface in the tests.
+#   deploy_all models   → models (STT + LLM + TTS) + web UI
+#   deploy_all          → web UI only (app-install)
 deploy_all() {
   local with_models="${1:-}"
   if [ "$PARALLEL" != "1" ]; then
     [ "$with_models" = "models" ] && deploy_models
-    deploy_supertonic
     deploy_webui
     return 0
   fi
 
   local logdir; logdir="$(mktemp -d 2>/dev/null || echo /tmp/sva.$$)"; mkdir -p "$logdir"
-  step "Deploying in parallel — Supertonic + web UI build while models pull (--sequential to disable)"
+  step "Deploying in parallel — web UI build while models pull (--sequential to disable)"
   local names=() pids=()
   if [ "$with_models" = "models" ]; then
     ( deploy_models     > "$logdir/models.log"     2>&1 ) & names+=(models);     pids+=($!)
   fi
-  ( deploy_supertonic   > "$logdir/supertonic.log" 2>&1 ) & names+=(supertonic); pids+=($!)
   ( deploy_webui        > "$logdir/webui.log"      2>&1 ) & names+=(webui);      pids+=($!)
 
   # live combined status until every job finishes
@@ -346,10 +334,12 @@ wire_endpoints() {
       SVA_STT_ENDPOINT="http://whisper-large-v3-predictor.$NS.svc.cluster.local:8080/v1" \
       SVA_LLM_MODEL=ministral-3-3b-instruct \
       SVA_LLM_ENDPOINT="http://ministral-3-3b-instruct-predictor.$NS.svc.cluster.local:8080/v1" \
-      SVA_TTS_ENDPOINT="http://supertonic.$NS.svc.cluster.local:7788/v1/tts" >/dev/null
+      SVA_TTS_MODEL=omnivoice \
+      SVA_TTS_ENDPOINT="http://omnivoice-predictor.$NS.svc.cluster.local:8080/v1" >/dev/null
   else
     oc set data -n "$NS" configmap/smart-voice-assistant-config \
-      SVA_TTS_ENDPOINT="http://supertonic.$NS.svc.cluster.local:7788/v1/tts" >/dev/null
+      SVA_TTS_MODEL=omnivoice \
+      SVA_TTS_ENDPOINT="http://omnivoice-predictor.$NS.svc.cluster.local:8080/v1" >/dev/null
   fi
   oc rollout restart deploy/smart-voice-assistant -n "$NS" >/dev/null
   oc rollout status  deploy/smart-voice-assistant -n "$NS" --timeout=120s >/dev/null
@@ -402,10 +392,10 @@ print("LLM_MODEL="+q(c["llm"].get("name")))
     printf "%s✓%s  /api/health 200\n" "$GRN" "$RST"; pass=$((pass+1))
   else printf "%s✗%s  /api/health unreachable\n" "$RED" "$RST"; failed=$((failed+1)); fi
 
-  # 2/4 TTS (Supertonic)
-  printf "%s[2/4]%s TTS (Supertonic)  " "$BOLD" "$RST"
+  # 2/4 TTS (OmniVoice)
+  printf "%s[2/4]%s TTS (OmniVoice)  " "$BOLD" "$RST"
   local code; code="$(curl -sk -o "$wav" -w '%{http_code}' -X POST "$url/api/tts" \
-    -H 'Content-Type: application/json' -d '{"text":"Component test.","lang":"en","voice":"M1"}')"
+    -H 'Content-Type: application/json' -d '{"text":"Component test.","lang":"en"}')"
   if [ "$code" = "200" ] && [ -s "$wav" ]; then
     printf "%s✓%s  audio/wav, %s bytes\n" "$GRN" "$RST" "$(wc -c <"$wav" | tr -d ' ')"; pass=$((pass+1)); have_wav=1
   else printf "%s✗%s  /api/tts HTTP %s\n" "$RED" "$RST" "$code"; failed=$((failed+1)); fi
@@ -460,20 +450,19 @@ summary() {
   printf "   Namespace   : %s\n" "$NS"
   printf "   App URL     : %s\n" "$url"
   local m uri ready role
-  for m in whisper-large-v3 ministral-3-3b-instruct; do
+  for m in whisper-large-v3 ministral-3-3b-instruct omnivoice; do
     oc get isvc "$m" -n "$NS" >/dev/null 2>&1 || continue
     uri="$(oc get isvc "$m" -n "$NS" -o jsonpath='{.spec.predictor.model.storageUri}' 2>/dev/null || true)"
     ready="$(oc get isvc "$m" -n "$NS" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || true)"
-    role=STT; [ "$m" = ministral-3-3b-instruct ] && role=LLM
+    role=STT; [ "$m" = ministral-3-3b-instruct ] && role=LLM; [ "$m" = omnivoice ] && role=TTS
     printf "   %-3s (%-24s ready=%-5s): %s\n" "$role" "$m" "${ready:-?}" "$uri"
   done
   local rimg; rimg="$(oc get servingruntime vllm-cuda -n "$NS" -o jsonpath='{.spec.containers[0].image}' 2>/dev/null || true)"
   [ -n "$rimg" ] && printf "   vLLM runtime: %s\n" "$rimg"
-  oc get deploy supertonic -n "$NS" >/dev/null 2>&1 && printf "   TTS         : Supertonic 3 (%s)\n" "$(oc get deploy supertonic -n "$NS" -o jsonpath='{.status.readyReplicas}/{.spec.replicas} ready' 2>/dev/null || true)"
   oc get deploy smart-voice-assistant -n "$NS" >/dev/null 2>&1 && printf "   Web UI      : %s\n" "$(oc get deploy smart-voice-assistant -n "$NS" -o jsonpath='{.status.readyReplicas}/{.spec.replicas} ready' 2>/dev/null || true)"
 
   banner "Summary — hardware"
-  for m in whisper-large-v3 ministral-3-3b-instruct; do
+  for m in whisper-large-v3 ministral-3-3b-instruct omnivoice; do
     oc get isvc "$m" -n "$NS" >/dev/null 2>&1 || continue
     local node; node="$(oc get pods -n "$NS" -l serving.kserve.io/inferenceservice="$m" -o jsonpath='{.items[-1:].spec.nodeName}' 2>/dev/null || true)"
     printf "   %-24s → %s\n" "$m" "${node:-<pending>}"

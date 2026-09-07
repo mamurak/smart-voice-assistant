@@ -4,10 +4,10 @@ Four scripts drive everything (all take `-n NAMESPACE`, default = current projec
 
 | Script | Does |
 |--------|------|
-| `full-install.sh`   | Models (STT+LLM) **+** Supertonic (TTS) **+** web UI, wires them, then **tests every component** |
-| `app-install.sh`    | Supertonic **+** web UI only (**no models**), wires TTS, tests the app components |
-| `full-uninstall.sh` | Removes the web UI, Supertonic, **and** the models |
-| `app-uninstall.sh`  | Removes the web UI + Supertonic, **leaves the models** running |
+| `full-install.sh`   | Models (STT+LLM+TTS) **+** web UI, wires them, then **tests every component** |
+| `app-install.sh`    | Web UI only (**no models**), wires endpoints, tests the app components |
+| `full-uninstall.sh` | Removes the web UI **and** the models |
+| `app-uninstall.sh`  | Removes the web UI, **leaves the models** running |
 | `status.sh`         | One-shot status snapshot (cron-able every 5 min) |
 | `gpu-status.sh`     | Cluster GPU inventory: specs, EMPTY/ENGAGED state, live utilization |
 
@@ -16,8 +16,8 @@ Four scripts drive everything (all take `-n NAMESPACE`, default = current projec
 same result). Unhealthy/missing pieces are (re)installed. Use `--force` to
 rebuild/re-pull everything (e.g. after changing the web-UI code).
 
-**Components deploy in parallel by default** — Supertonic and the web UI build
-while the models pull (wall-clock ≈ the slowest one, not the sum). A combined
+**Components deploy in parallel by default** — the web UI builds while the
+models pull (wall-clock ≈ the slowest one, not the sum). A combined
 status prints every 30s; on join, each component's result is reported. Use
 `--sequential` for one-at-a-time with inline build logs.
 
@@ -28,21 +28,21 @@ Flags (all scripts): `-n NAMESPACE` · `-f/--force` (reinstall even if healthy) 
 
 ## Clusters without an internal image registry (bare-metal / disconnected)
 
-By default the scripts **build the web-UI and Supertonic images on-cluster** via
-`BuildConfig` → internal registry. If your cluster has no internal registry (you'll
-see `InvalidOutputReference: Output image could not be resolved`), build the images
-once and push them to a registry the cluster can pull from (e.g. quay.io):
+By default the scripts **build the web-UI image on-cluster** via `BuildConfig` →
+internal registry. If your cluster has no internal registry (you'll see
+`InvalidOutputReference: Output image could not be resolved`), build the image
+once and push it to a registry the cluster can pull from (e.g. quay.io):
 
 ```bash
 podman login quay.io
-./build-push.sh -r quay.io/<you>                         # builds + pushes both images
+./build-push.sh -r quay.io/<you>                         # builds + pushes the web-UI image
 ./full-install.sh -n voice-assistant --registry quay.io/<you>
 ```
 
 With `--registry`, the scripts skip the on-cluster build, pin the Deployment to the
 external image, and — if the repo is private — create a namespace pull secret from
-your local `podman`/`docker` login automatically. (Set `SVA_WEBUI_IMAGE` /
-`SVA_TTS_IMAGE` for fully custom refs.) The preflight also reports whether the
+your local `podman`/`docker` login automatically. (Set `SVA_WEBUI_IMAGE` for a
+fully custom ref.) The preflight also reports whether the
 internal registry is `Managed`, so the on-cluster path fails fast with this hint.
 
 On a full install the script also:
@@ -71,7 +71,7 @@ Testing components
   route: https://smart-voice-assistant-voice-assistant.apps.<domain>
 
 [1/4] Web UI            ✓  /api/health 200
-[2/4] TTS (Supertonic)  ✓  audio/wav, 165932 bytes
+[2/4] TTS (OmniVoice)  ✓  audio/wav, 165932 bytes
 [3/4] LLM (Ministral)   ✓  "Hello!"
 [4/4] STT (Whisper)     ✓  "component test"     ← round-trips the TTS clip back to text
 
@@ -84,17 +84,17 @@ Testing components
 ## Prerequisites
 
 - **Models** (full install): RHOAI/KServe + the **NVIDIA GPU Operator** and a GPU
-  per model. Details: [`models/README.md`](models/README.md).
+  per model (3 GPUs total). Details: [`models/README.md`](models/README.md).
 - **App**: `registry.redhat.io` pull access (default on RHOAI) for the UBI base
-  images; the build runs on-cluster (no local podman needed).
+  images; the web-UI build runs on-cluster (no local podman needed).
 
 ## GPU note
 
-The model manifests **request** a GPU (`nvidia.com/gpu: "1"` each, 2 total) — they
-do **not provision** hardware. A GPU must already be schedulable (a GPU node + the
-NVIDIA GPU Operator). The preflight:
+The model manifests **request** a GPU (`nvidia.com/gpu: "1"` each, 3 total — STT,
+LLM, and TTS) — they do **not provision** hardware. A GPU must already be
+schedulable (a GPU node + the NVIDIA GPU Operator). The preflight:
 
-- checks there are **≥ 2 free** GPUs (allocatable minus what other namespaces
+- checks there are **≥ 3 free** GPUs (allocatable minus what other namespaces
   already use — a namespace's own GPUs don't count against it, so re-runs pass);
 - reads the GPU nodes' **taints** (e.g. `nvidia.com/gpu:NoSchedule`) and
   **auto-adds matching tolerations** to the model pods, so it works on clusters
@@ -131,8 +131,8 @@ Remove it with `crontab -e` (delete the line) or `crontab -r` (clears all).
 
 | Layer | Objects | Source |
 |-------|---------|--------|
-| Models | `ServingRuntime` + 2× `InferenceService` (KServe/vLLM) | public Red Hat AI ModelCar catalog (`oci://`, no secret) |
-| TTS | Deployment + Service (Supertonic 3, ONNX/CPU) | built from `../supertonic/` |
+| Models (STT+LLM) | `ServingRuntime` + 2× `InferenceService` (KServe/vLLM) | public Red Hat AI ModelCar catalog (`oci://`, no secret) |
+| TTS (OmniVoice) | `InferenceService` (KServe/vllm-omni, GPU) | `models/tts.yaml` |
 | Web UI | ImageStream + BuildConfig + ConfigMap + Deployment + Service + edge Route | built from `..` |
 
 The Route is **edge-TLS** (HTTPS) so the browser mic (`getUserMedia`) works.
@@ -149,8 +149,8 @@ The web-UI image is portable — endpoints come from `SVA_*` env (the ConfigMap 
 |---------|---------|
 | `SVA_STT_ENDPOINT` / `SVA_STT_MODEL` / `SVA_STT_TOKEN` | Whisper `/v1` base |
 | `SVA_LLM_ENDPOINT` / `SVA_LLM_MODEL` / `SVA_LLM_TOKEN` | LLM `/v1` base |
-| `SVA_TTS_ENDPOINT` / `SVA_TTS_MODEL` / `SVA_TTS_TOKEN` | Supertonic endpoint |
-| `SVA_TTS_API` | `native` (`/v1/tts`) or `openai` (`/v1/audio/speech`) |
+| `SVA_TTS_ENDPOINT` / `SVA_TTS_MODEL` / `SVA_TTS_TOKEN` | OmniVoice endpoint (`http://omnivoice-predictor.<ns>.svc.cluster.local:8080/v1`) |
+| `SVA_TTS_API` | `openai` (`/v1/audio/speech`) |
 | `SVA_TTS_FORMAT` | `wav` \| `flac` \| `ogg` |
 | `SVA_APP_TITLE` | header title |
 
@@ -165,7 +165,8 @@ oc rollout restart deploy/smart-voice-assistant -n $NS
 
 Everything the scripts do is plain `oc apply` / `oc delete` on the manifests, so
 you can run any single piece by hand — see [`models/README.md`](models/README.md)
-for the model manifests, or apply `supertonic.yaml` / `webui.yaml` directly.
+for the model manifests (including `models/tts.yaml` for OmniVoice), or apply
+`webui.yaml` directly.
 
 ## Troubleshooting
 
@@ -180,8 +181,8 @@ causes it surfaces:
 | Model `CrashLoopBackOff` | Auto-diagnosed with the last error line. Often an image/driver or model-format mismatch. |
 | STT/LLM tests "skipped" | Endpoints weren't wired — full-install wires them; `app-install` leaves them for you (`SVA_STT_ENDPOINT` / `SVA_LLM_ENDPOINT`). |
 | A run dies mid-way (e.g. API `TLS handshake timeout`) | Transient — just **re-run**; skip-if-healthy makes it resume in seconds. |
-| Two full stacks won't fit | Each stack needs 2 GPUs. `./gpu-status.sh` shows what's engaged; `./full-uninstall.sh -n <other-ns>` frees them. |
-| `/api/tts` returns **504** | See below — either the router timeout, onnxruntime thread explosion, or (old images) a runtime HF download. All three are fixed in the current manifests. |
+| Two full stacks won't fit | Each stack needs 3 GPUs. `./gpu-status.sh` shows what's engaged; `./full-uninstall.sh -n <other-ns>` frees them. |
+| `/api/tts` returns **504** | Check OmniVoice `InferenceService` readiness, `SVA_TTS_ENDPOINT` wiring, and router timeout — see [troubleshooting.md](../wiki/troubleshooting.md). |
 | Prebuilt image → `ImagePullBackOff` `unauthorized` | The quay repo is **private** and the cluster has no pull secret. Make the repo public, or `podman login` on the machine running the script (it copies the credential), or create a pull secret. |
 
 ## Gotchas we've already fixed (and how to avoid them)
@@ -189,25 +190,16 @@ causes it surfaces:
 These bit us on a real disconnected GPU cluster. The current manifests/images
 prevent them — this is the reasoning so they don't regress:
 
-1. **TTS 504 — runtime Hugging Face download (air-gap).** Supertonic used to pull
-   its weights from HF on the *first* synth; on an air-gapped cluster that hangs
-   → router 504. **Fixed:** weights are now **baked into the image** at build time
-   (`supertonic/Dockerfile`), so there's zero HF egress at runtime.
-2. **TTS 504 — onnxruntime thread explosion.** Left on auto, onnxruntime spawns
-   one thread per **host** core (dozens on a GPU node) while the pod is CPU-capped
-   → thrashing turns a 3s synth into 40-70s → router 504. **Fixed:** `supertonic.yaml`
-   pins `SUPERTONIC_INTRA_OP_THREADS` **equal to `limits.cpu`**. If you change the
-   CPU limit, change the thread count to match.
-3. **TTS 504 — router timeout.** CPU synth can exceed the router's 30s default.
+1. **TTS 504 — router timeout.** A long synth can exceed the router's 30s default.
    **Fixed:** the Route carries `haproxy.router.openshift.io/timeout: 120s`.
-4. **New image not picked up on re-deploy.** A pushed `:latest` won't roll out if
-   the node caches the old layer. **Fixed:** both app Deployments set
+2. **New image not picked up on re-deploy.** A pushed `:latest` won't roll out if
+   the node caches the old layer. **Fixed:** the web-UI Deployment sets
    `imagePullPolicy: Always`. Note skip-if-healthy also keeps a *running* pod —
    use `--force` (or `oc rollout restart`) to pull a freshly pushed image.
-5. **Private quay repos → `ImagePullBackOff`.** Prebuilt images must be pullable:
+3. **Private quay repos → `ImagePullBackOff`.** Prebuilt images must be pullable:
    make the quay repos **public**, or ensure a pull secret exists (the installer
    copies your local `podman login` credential when it can).
-6. **Component-test false negatives during rollout.** Both app Deployments use
+4. **Component-test false negatives during rollout.** The web-UI Deployment uses
    `strategy: Recreate` so an old pod never sits behind the Route next to the new
    one; the test also waits for a *populated* config before probing.
 
@@ -215,5 +207,5 @@ prevent them — this is the reasoning so they don't regress:
 
 - `config.yaml` (Settings edits incl. logo) is written to the pod and is
   **ephemeral** — prefer the env/ConfigMap wiring, or mount a PVC for persistence.
-- Supertonic weights are **baked into the image** (no runtime Hugging Face
-  egress) — see [`../supertonic/README.md`](../supertonic/README.md).
+- TTS is served by **OmniVoice**, a KServe `InferenceService` running vllm-omni
+  on GPU — see [`models/README.md`](models/README.md).

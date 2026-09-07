@@ -11,11 +11,9 @@ services:
     name: "ministral-3-3b-instruct"
     endpoint: "https://<ministral-route>/v1"      # OpenAI /v1/chat/completions
     token: ""
-  # --- TTS: Supertonic 3 (31 languages) ---
+  # --- TTS: OmniVoice (646 languages, vllm-omni on GPU) ---
   tts:
-    name: "supertonic-3"
-    endpoint: "http://127.0.0.1:7788/v1/tts"      # native; or .../v1/audio/speech for openai
+    name: "omnivoice"
+    endpoint: "https://<omnivoice-route>/v1"      # OpenAI /v1/audio/speech
     token: ""
-    api: "native"                                  # native | openai
-    format: "wav"                                  # wav | flac | ogg (no mp3)
-    speed: "1.0"
+    format: "wav"                                  # wav | flac | ogg

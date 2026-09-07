@@ -1,12 +1,10 @@
 /* ============================================================
-   langs.js — Supertonic 3 language + voice catalog.
-   31 languages (verified against the Supertonic 3 model card)
-   plus `na` language-agnostic. Voices are the open-weight preset
-   set; edit if your Supertonic build exposes a different roster.
+   langs.js — TTS language catalog.
+   31 languages (the pipeline-wide supported set, constrained
+   by the LLM) plus `na` language-agnostic.
    ============================================================ */
 
-// Zain / contact-centre relevant languages first, then alphabetical.
-const SUPERTONIC_LANGS = [
+const TTS_LANGS = [
   { code: 'en', name: 'English' },
   { code: 'ar', name: 'Arabic' },
   { code: 'hi', name: 'Hindi' },
@@ -41,34 +39,21 @@ const SUPERTONIC_LANGS = [
   { code: 'na', name: 'Auto (language-agnostic)' }
 ];
 
-// Open-weight preset voices. Custom styles can be built with Supertonic Voice Builder.
-const SUPERTONIC_VOICES = [
-  { id: 'F3', label: 'F3 — Female · 3' },
-  { id: 'F4', label: 'F4 — Female · 4' },
-  { id: 'F5', label: 'F5 — Female · 5' },
-  { id: 'M1', label: 'M1 — Male · 1' },
-  { id: 'M3', label: 'M3 — Male · 3' },
-  { id: 'M4', label: 'M4 — Male · 4' },
-  { id: 'M5', label: 'M5 — Male · 5' }
-];
-
-// Short, hand-verified preview lines. Languages without a curated line
-// fall back to English (still a valid preview of the voice timbre).
 const PREVIEW_SAMPLES = {
-  en: 'Hello, this is a preview of this voice.',
-  ar: 'مرحبًا، هذه معاينة لهذا الصوت.',
-  hi: 'नमस्ते, यह इस आवाज़ का पूर्वावलोकन है।',
+  en: 'Hello, this is a preview of the voice.',
+  ar: 'مرحبًا، هذه معاينة للصوت.',
+  hi: 'नमस्ते, यह आवाज़ का पूर्वावलोकन है।',
   id: 'Halo, ini adalah pratinjau suara ini.',
-  fr: 'Bonjour, ceci est un aperçu de cette voix.',
-  es: 'Hola, esta es una vista previa de esta voz.',
+  fr: 'Bonjour, ceci est un aperçu de la voix.',
+  es: 'Hola, esta es una vista previa de la voz.',
   tr: 'Merhaba, bu sesin bir önizlemesidir.',
-  de: 'Hallo, dies ist eine Vorschau dieser Stimme.',
-  it: 'Ciao, questa è un’anteprima di questa voce.',
-  pt: 'Olá, esta é uma prévia desta voz.',
-  nl: 'Hallo, dit is een voorbeeld van deze stem.',
-  ru: 'Здравствуйте, это предпросмотр этого голоса.',
-  ja: 'こんにちは、これはこの声のプレビューです。',
-  ko: '안녕하세요, 이 목소리의 미리듣기입니다.'
+  de: 'Hallo, dies ist eine Vorschau der Stimme.',
+  it: "Ciao, questa è un’anteprima della voce.",
+  pt: 'Olá, esta é uma prévia da voz.',
+  nl: 'Hallo, dit is een voorbeeld van de stem.',
+  ru: 'Здравствуйте, это предпросмотр голоса.',
+  ja: 'こんにちは、これは音声のプレビューです。',
+  ko: '안녕하세요, 이것은 음성 미리듣기입니다.'
 };
 
 function previewText(code) {
@@ -76,7 +61,6 @@ function previewText(code) {
 }
 
 if (typeof window !== 'undefined') {
-  window.SUPERTONIC_LANGS = SUPERTONIC_LANGS;
-  window.SUPERTONIC_VOICES = SUPERTONIC_VOICES;
+  window.TTS_LANGS = TTS_LANGS;
   window.previewText = previewText;
 }

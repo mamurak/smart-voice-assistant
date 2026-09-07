@@ -74,31 +74,22 @@
 
     <section class="card">
       <h3 class="card__title">Text-to-Speech <span class="tag">TTS</span></h3>
-      <p class="card__sub">Supertonic 3 — 31 languages, on-device ONNX (no GPU needed). Urdu is not supported.</p>
+      <p class="card__sub">OmniVoice — 646 languages, served by vllm-omni on GPU (OpenAI-compatible /v1/audio/speech).</p>
       <div class="grid-3">
         <div class="field">
           <label class="field__label" for="ttsName">Model name</label>
-          <input type="text" id="ttsName" placeholder="supertonic-3" />
+          <input type="text" id="ttsName" placeholder="omnivoice" />
         </div>
         <div class="field">
           <label class="field__label" for="ttsEndpoint">Endpoint</label>
-          <input type="url" id="ttsEndpoint" placeholder="http://127.0.0.1:7788/v1/tts" />
+          <input type="url" id="ttsEndpoint" placeholder="http://127.0.0.1:8080/v1" />
         </div>
         <div class="field">
           <label class="field__label" for="ttsToken">Token</label>
           <input type="password" id="ttsToken" placeholder="Bearer token (optional)" autocomplete="off" />
         </div>
       </div>
-      <div class="grid-3" style="grid-template-columns:1fr 1fr 1fr">
-        <div class="field">
-          <label class="field__label" for="ttsApi">API style</label>
-          <div class="select-wrap">
-            <select id="ttsApi">
-              <option value="native">native — /v1/tts</option>
-              <option value="openai">openai — /v1/audio/speech</option>
-            </select>
-          </div>
-        </div>
+      <div class="grid-3" style="grid-template-columns:1fr">
         <div class="field">
           <label class="field__label" for="ttsFormat">Audio format</label>
           <div class="select-wrap">
@@ -108,10 +99,6 @@
               <option value="ogg">ogg</option>
             </select>
           </div>
-        </div>
-        <div class="field">
-          <label class="field__label" for="ttsSpeed">Speed</label>
-          <input type="text" id="ttsSpeed" placeholder="1.0" inputmode="decimal" />
         </div>
       </div>
     </section>

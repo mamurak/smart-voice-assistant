@@ -1,13 +1,13 @@
 /* ============================================================
-   tts.js — Text-to-Speech client (Supertonic 3).
+   tts.js — Text-to-Speech client (OmniVoice via vllm-omni).
 
    Talks to the same-origin /api/tts proxy in server.py, which
-   forwards to the configured Supertonic endpoint. Handles one
+   forwards to the configured TTS endpoint. Handles one
    playback at a time.
 
    Public API:
-     TTS.synthesize(text, { lang, voice, signal }) -> Promise<Blob>
-     TTS.speak(text, { lang, voice }) -> Promise<HTMLAudioElement>
+     TTS.synthesize(text, { lang, signal }) -> Promise<Blob>
+     TTS.speak(text, { lang }) -> Promise<HTMLAudioElement>
      TTS.stop()
    ============================================================ */
 
@@ -15,11 +15,11 @@ const TTS = {
   current: null,        // currently-playing HTMLAudioElement
   _url: null,
 
-  async synthesize(text, { lang = 'en', voice = 'M1', signal } = {}) {
+  async synthesize(text, { lang = 'en', signal } = {}) {
     const res = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, lang, voice }),
+      body: JSON.stringify({ text, lang }),
       signal
     });
     if (!res.ok) {

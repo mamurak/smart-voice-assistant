@@ -14,11 +14,6 @@ const Pipeline = {
     const el = document.querySelector(side === 'customer' ? '#customerLang' : '#supportLang');
     return (el && el.value) || 'en';
   },
-  voiceForSide(side) {
-    // voice used when speaking TO this side
-    const s = window.AppState || {};
-    return side === 'customer' ? (s.customerVoice || 'F3') : (s.supportVoice || 'M1');
-  },
 
   // dispatch based on mode + which side spoke
   handle(side, blob) {
@@ -30,7 +25,6 @@ const Pipeline = {
   // ---- AI Agent: customer → transcribe → reply in customer's language → speak ----
   async fromCustomer(audioBlob) {
     const lang = this.langOf('customer');
-    const voice = (window.AppState && window.AppState.agentVoice) || 'M1';
     const say = window.toast || (() => {});
 
     let stt;
@@ -48,7 +42,7 @@ const Pipeline = {
       say('LLM not wired yet (js/llm.js).', ''); return;
     }
     this.setClip('customer', '💬 ' + llm.text);
-    try { await window.TTS.speak(llm.text, { lang: llm.lang || lang, voice }); }
+    try { await window.TTS.speak(llm.text, { lang: llm.lang || lang }); }
     catch (e) { say('TTS error: ' + e.message, 'err'); }
   },
 
@@ -57,7 +51,6 @@ const Pipeline = {
     const toSide = fromSide === 'customer' ? 'support' : 'customer';
     const fromLang = this.langOf(fromSide);
     const toLang = this.langOf(toSide);
-    const voice = this.voiceForSide(toSide);
     const say = window.toast || (() => {});
 
     let stt;
@@ -75,7 +68,7 @@ const Pipeline = {
       catch (e) { say('Translation error: ' + e.message, 'err'); this.setClip(toSide, 'translation error'); return; }
     }
     this.setClip(toSide, '🌐 ' + out);
-    try { await window.TTS.speak(out, { lang: toLang, voice }); }
+    try { await window.TTS.speak(out, { lang: toLang }); }
     catch (e) { say('TTS error: ' + e.message, 'err'); }
   },
 

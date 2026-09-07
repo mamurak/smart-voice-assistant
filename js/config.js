@@ -22,12 +22,10 @@ const DEFAULT_CONFIG = {
     stt: { name: 'whisper-large-v3-turbo',  endpoint: '', token: '' },
     llm: { name: 'ministral-3-3b-instruct', endpoint: '', token: '' },
     tts: {
-      name: 'supertonic-3',
-      endpoint: 'http://127.0.0.1:7788/v1/tts',
+      name: 'omnivoice',
+      endpoint: 'http://127.0.0.1:8080/v1',
       token: '',
-      api: 'native',      // native (/v1/tts) | openai (/v1/audio/speech)
-      format: 'wav',      // wav | flac | ogg
-      speed: '1.0'
+      format: 'wav'
     }
   }
 };

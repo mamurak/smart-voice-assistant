@@ -36,7 +36,7 @@ Multilingual customer support is one of the highest-cost, hardest-to-staff funct
 
 This quickstart solves the problem with two modes. In **AI Agent** mode, the customer speaks and the assistant transcribes their speech, generates an intelligent reply in the customer's language, and speaks it back — no human agent needed. In **Human** mode, a human support agent and the customer each speak their own language; the assistant transcribes, translates, and speaks the translation to the other side in real time — a live bidirectional voice translator with no LLM "answer" generated.
 
-The pipeline chains three open-weight models: **Whisper large-v3** for speech-to-text, **Ministral 3B Instruct** for reply generation and translation, and **Supertonic 3** for text-to-speech across 31 languages. All models run on your own OpenShift cluster — Whisper and Ministral are served by KServe/vLLM on GPU, while Supertonic runs on CPU with ONNX. The browser-based UI talks only to a lightweight Python proxy server, which keeps API tokens server-side and avoids CORS. The entire stack deploys from a single CLI command.
+The pipeline chains three open-weight models: **Whisper large-v3** for speech-to-text, **Ministral 3B Instruct** for reply generation and translation, and **OmniVoice** for text-to-speech across 646 languages. All models run on your own OpenShift cluster — Whisper and Ministral are served by KServe/vLLM on GPU, while OmniVoice is served by KServe/vllm-omni on GPU. The browser-based UI talks only to a lightweight Python proxy server, which keeps API tokens server-side and avoids CORS. The entire stack deploys from a single CLI command.
 
 ### See it in action
 
@@ -52,7 +52,7 @@ The pipeline chains three open-weight models: **Whisper large-v3** for speech-to
 |-----------|------|---------|----------|
 | **Whisper large-v3** | Speech-to-Text | KServe / vLLM on GPU | `/v1/audio/transcriptions` |
 | **Ministral 3B Instruct** | LLM (reply + translation) | KServe / vLLM on GPU | `/v1/chat/completions` |
-| **Supertonic 3** | Text-to-Speech (31 languages) | ONNX on CPU | `/v1/tts` |
+| **OmniVoice** | Text-to-Speech (646 languages) | KServe / vllm-omni on GPU | `/v1/audio/speech` |
 | **Web UI** | Static front-end + API proxy | Python 3.11 (stdlib only) | `/api/stt`, `/api/llm`, `/api/tts` |
 
 The browser sends audio to the Web UI pod over HTTPS (edge-TLS Route). The Web UI proxies each API call to the corresponding model backend, keeping tokens server-side.
@@ -65,9 +65,9 @@ The browser sends audio to the Web UI pod over HTTPS (edge-TLS Route). The Web U
 |-----------|-----------------------|--------------------------|-----|
 | Whisper large-v3 (STT) | 2 / 8 cores | 8 GiB / 24 GiB | 1x NVIDIA GPU (16 GB+ VRAM) |
 | Ministral 3B (LLM) | 2 / 8 cores | 8 GiB / 24 GiB | 1x NVIDIA GPU (16 GB+ VRAM) |
-| Supertonic 3 (TTS) | 2 / 8 cores | 1 GiB / 2 GiB | None (CPU-only) |
+| OmniVoice (TTS) | 2 / 4 cores | 4 GiB / 8 GiB | 1x NVIDIA GPU (4 GB+ VRAM) |
 | Web UI | 50m / 500m | 128 MiB / 256 MiB | None |
-| **Total** | **~6 cores request** | **~17 GiB request** | **2x NVIDIA GPU (16 GB+ VRAM each)** |
+| **Total** | **~6 cores request** | **~20 GiB request** | **3x NVIDIA GPU** |
 
 > **Note:** If you bring your own STT/LLM endpoints (using `app-install.sh`), GPU is not required on this cluster.
 
@@ -90,7 +90,7 @@ Before deploying, ensure you have:
 
 - Access to a Red Hat OpenShift cluster with RHOAI and KServe installed
 - `oc` CLI installed and authenticated (`oc login ...`)
-- At least 2 NVIDIA GPUs (16 GB+ VRAM each) schedulable on the cluster (for the full stack)
+- At least 3 NVIDIA GPUs schedulable on the cluster (2x 16 GB+ VRAM for STT/LLM, 1x 4 GB+ VRAM for TTS)
 
 ### Installation
 
@@ -111,8 +111,8 @@ Before deploying, ensure you have:
    The script deploys to your active `oc project`. You can target a different namespace with `-n NAMESPACE` — the namespace must already exist. Creating a new namespace is not required; any existing namespace works.
 
    The script will:
-   - **Deploy models** — Whisper and Ministral from the Red Hat AI ModelCar catalog
-   - **Build and deploy** the Supertonic TTS backend and the Web UI on-cluster
+   - **Deploy models** — Whisper, Ministral, and OmniVoice via KServe
+   - **Build and deploy** the Web UI on-cluster
    - **Wire** all endpoints via ConfigMap
    - **Run component tests** (Web UI, TTS, LLM, STT)
    - **Print** the application URL and a software summary
@@ -121,7 +121,7 @@ Before deploying, ensure you have:
 
 #### Alternative deployment options
 
-**Bring your own STT/LLM** — deploy only the TTS backend and Web UI:
+**Bring your own STT/LLM** — deploy only the Web UI:
 
 ```bash
 ./app-install.sh
@@ -129,7 +129,7 @@ Before deploying, ensure you have:
 
 Then configure your STT/LLM endpoints in the Settings page or via `SVA_*` environment variables.
 
-**Disconnected / registry-less clusters** — pre-build images and push to an external registry:
+**Disconnected / registry-less clusters** — pre-build the web UI image and push to an external registry:
 
 ```bash
 podman login quay.io
@@ -182,7 +182,7 @@ smart-voice-assistant/
 │   ├── app.js                       # Home logic — modes, record, VU meter, status
 │   ├── pipeline.js                  # Audio routing: STT → LLM/translate → TTS
 │   ├── stt.js llm.js tts.js        # Service clients (call the server proxies)
-│   ├── langs.js                     # 31 Supertonic languages + voices
+│   ├── langs.js                     # 31 supported languages
 │   └── settings.js config.js yaml.js
 ├── server.py                        # Static files + /api/{config,tts,stt,llm} proxy
 ├── Dockerfile / Containerfile       # Web UI image (UBI9 Python 3.11)
@@ -190,19 +190,19 @@ smart-voice-assistant/
 ├── LICENSE                          # Apache 2.0
 ├── docs/
 │   └── images/                      # Architecture diagrams and screenshots
-├── supertonic/                      # Supertonic 3 TTS build context
-│   └── Dockerfile                   # TTS image (weights baked in for air-gap)
 ├── deploy/                          # OpenShift deployment
 │   ├── full-install.sh / app-install.sh   # Install scripts
 │   ├── full-uninstall.sh / app-uninstall.sh
 │   ├── status.sh / gpu-status.sh    # Monitoring
-│   ├── build-push.sh               # Pre-build images for disconnected clusters
+│   ├── build-push.sh               # Pre-build web UI image for disconnected clusters
 │   ├── lib.sh                       # Shared library (preflight, deploy, tests)
-│   ├── webui.yaml / supertonic.yaml # App manifests
+│   ├── webui.yaml                   # Web UI manifest
 │   └── models/                      # KServe InferenceService manifests
 │       ├── serving-runtime.yaml     # Shared vLLM ServingRuntime
+│       ├── vllm-omni-serving-runtime.yaml  # vllm-omni ServingRuntime (TTS)
 │       ├── whisper-stt.yaml         # Whisper large-v3
-│       └── ministral-llm.yaml      # Ministral 3B Instruct
+│       ├── ministral-llm.yaml      # Ministral 3B Instruct
+│       └── tts.yaml                # OmniVoice TTS
 └── wiki/                            # Architecture, deployment, troubleshooting docs
 ```
 
@@ -210,7 +210,7 @@ smart-voice-assistant/
 
 - [Whisper large-v3 model card](https://huggingface.co/openai/whisper-large-v3)
 - [Ministral 3B Instruct model card](https://huggingface.co/mistralai/Ministral-3b-Instruct-2503)
-- [Supertonic 3 model card](https://huggingface.co/Supertone/supertonic-3)
+- [OmniVoice model card](https://huggingface.co/k2-fsa/OmniVoice)
 - [Red Hat AI ModelCar catalog](https://quay.io/organization/redhat-ai-services)
 - [Red Hat OpenShift AI documentation](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed)
 - [Enabling the KServe component](https://docs.redhat.com/en/documentation/red_hat_openshift_ai_self-managed/3.5/html/installing_and_uninstalling_openshift_ai_self-managed/installing-and-deploying-openshift-ai_install#installing-and-managing-openshift-ai-components_component-install)
@@ -238,10 +238,10 @@ branding:
 services:
   stt: { name: "whisper-large-v3",        endpoint: "…/v1", token: "" }
   llm: { name: "ministral-3-3b-instruct", endpoint: "…/v1", token: "" }
-  tts: { name: "supertonic-3", endpoint: "…/v1/tts", api: "native", format: "wav" }
+  tts: { name: "omnivoice", endpoint: "…/v1", format: "wav" }
 ```
 
-Supertonic 3 covers **31 languages** (incl. Arabic, Hindi, Indonesian) but **not Urdu**. Tokens live in `config.yaml` in plain text — the file is `.gitignore`d.
+OmniVoice supports **646 languages** (the UI exposes 31, constrained by the LLM). Tokens live in `config.yaml` in plain text — the file is `.gitignore`d.
 
 ### Quick start (local)
 
@@ -249,11 +249,7 @@ Supertonic 3 covers **31 languages** (incl. Arabic, Hindi, Indonesian) but **not
 python3 server.py            # → http://127.0.0.1:8000  (stdlib only, no pip install)
 ```
 
-Open **http://localhost:8000**, then point the STT/LLM/TTS endpoints at your services in **Settings**, or run Supertonic locally:
-
-```bash
-pip install 'supertonic[serve]' && supertonic serve --port 7788
-```
+Open **http://localhost:8000**, then point the STT/LLM/TTS endpoints at your services in **Settings**.
 
 ## Tags
 

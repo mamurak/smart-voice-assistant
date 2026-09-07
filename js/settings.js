@@ -40,9 +40,7 @@ function fillForm(cfg) {
   $('#ttsName').value = s.tts.name || '';
   $('#ttsEndpoint').value = s.tts.endpoint || '';
   $('#ttsToken').value = s.tts.token || '';
-  $('#ttsApi').value = s.tts.api || 'native';
   $('#ttsFormat').value = s.tts.format || 'wav';
-  $('#ttsSpeed').value = s.tts.speed || '1.0';
 
   $('#appTitleInput').value = cfg.branding?.app_title || '';
   $('#themeSelect').value = (window.THEMES || []).includes(cfg.branding?.theme) ? cfg.branding.theme : 'green';
@@ -65,9 +63,7 @@ function readForm() {
         name: $('#ttsName').value.trim(),
         endpoint: $('#ttsEndpoint').value.trim(),
         token: $('#ttsToken').value,
-        api: $('#ttsApi').value,
-        format: $('#ttsFormat').value,
-        speed: $('#ttsSpeed').value.trim() || '1.0'
+        format: $('#ttsFormat').value
       }
     }
   };

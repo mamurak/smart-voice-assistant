@@ -1,19 +1,14 @@
 /* ============================================================
    app.js — home page.
-   Phase 2: TTS (Supertonic) is live via Preview + the pipeline;
-   STT/LLM are wired in js/stt.js + js/llm.js (your part).
-   Language + voice catalog comes from js/langs.js.
+   STT/LLM/TTS are wired in js/stt.js + js/llm.js + js/tts.js.
+   Language catalog comes from js/langs.js.
    ============================================================ */
 
-const VOICES = window.SUPERTONIC_VOICES;
-const LANGUAGES = window.SUPERTONIC_LANGS;
+const LANGUAGES = window.TTS_LANGS;
 
 // shared app state (read by pipeline.js)
 window.AppState = {
-  mode: 'ai',            // 'ai' | 'human'
-  agentVoice: 'F3',      // AI-agent reply voice
-  customerVoice: 'F3',   // voice heard on the customer side (Human-mode translation)
-  supportVoice: 'M1'     // voice heard on the support side  (Human-mode translation)
+  mode: 'ai'             // 'ai' | 'human'
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -103,27 +98,16 @@ function initModeToggle() {
   humanBtn.addEventListener('click', () => set('human'));
 }
 
-/* ---------- voice picker (live Supertonic preview) ---------- */
-function initVoicePicker() {
-  const sel = $('#voiceSelect');
-  fillSelect(sel, VOICES, v => v.id, v => v.label, window.AppState.agentVoice);
-  $('#voiceSelected').textContent = window.AppState.agentVoice;
-
-  $('#selectVoice').addEventListener('click', () => {
-    window.AppState.agentVoice = sel.value;
-    $('#voiceSelected').textContent = sel.value;
-    toast('Voice ' + sel.value + ' selected');
-  });
-
+/* ---------- TTS preview ---------- */
+function initTtsPreview() {
   const previewBtn = $('#previewVoice');
   previewBtn.addEventListener('click', async () => {
-    const voice = sel.value;
-    const lang = $('#customerLang').value || 'en';   // preview in the customer's language
+    const lang = $('#customerLang').value || 'en';
     previewBtn.disabled = true;
     const orig = previewBtn.innerHTML;
     previewBtn.textContent = 'Synthesising…';
     try {
-      await TTS.speak(previewText(lang), { lang, voice });
+      await TTS.speak(previewText(lang), { lang });
     } catch (e) {
       toast(e.message, 'err');
     } finally {
@@ -278,7 +262,7 @@ function initTalkButtons() {
   fillSelect($('#supportLang'),  LANGUAGES, l => l.code, l => l.name, 'en');
 
   initModeToggle();
-  initVoicePicker();
+  initTtsPreview();
   initTalkButtons();
 
   refreshStatus();

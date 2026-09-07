@@ -13,7 +13,7 @@ window.LLM = {
   async reply(userText, { sourceLang = 'auto', targetLang = 'en', mode = 'ai' } = {}) {
     const cfg = (await Config.load()).services.llm;
     const langName =
-      (window.SUPERTONIC_LANGS.find(l => l.code === targetLang) || {}).name || targetLang;
+      (window.TTS_LANGS.find(l => l.code === targetLang) || {}).name || targetLang;
 
     const sys =
       `You are a helpful contact-centre voice assistant. ` +
@@ -45,7 +45,7 @@ window.LLM = {
 
   // Pure translation (used by Human mode's bidirectional translator).
   async translate(userText, { fromLang = 'auto', toLang = 'en' } = {}) {
-    const nameOf = c => (window.SUPERTONIC_LANGS.find(l => l.code === c) || {}).name || c;
+    const nameOf = c => (window.TTS_LANGS.find(l => l.code === c) || {}).name || c;
     const fromName = fromLang === 'auto' ? 'the source language' : nameOf(fromLang);
     const toName = nameOf(toLang);
 
