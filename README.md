@@ -42,8 +42,7 @@ The pipeline chains three open-weight models: **Whisper large-v3** for speech-to
 
 ![Application screenshot](docs/images/screenshot.png)
 
-Watch the video walkthrough
-<iframe width="560" height="315" src="https://www.youtube.com/embed/6KaspxeJ7MA?si=2wKfAo_V7waM8Vrl" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+[Watch the video walkthrough](https://youtu.be/6KaspxeJ7MA?si=Hy6wii4N7MioH0sy)
 
 ### Architecture diagrams
 
