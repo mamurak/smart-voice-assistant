@@ -20,7 +20,7 @@ spec:
     - name: kserve-container
       # vllm-omni community image. Replace with a productised RHOAI image when
       # available, or build your own from https://github.com/vllm-project/vllm-omni
-      image: vllm/vllm-omni:v0.28.0
+      image: quay.io/vllm/automation-vllm-omni:0.26.0_rhaiv.0
       command:
         - python
         - "-m"
@@ -29,6 +29,7 @@ spec:
         - "--port=8080"
         - "--model=/mnt/models"
         - "--served-model-name={{.Name}}"
+        - "--trust-remote-code"
         - "--omni"
       env:
         - name: HF_HOME
