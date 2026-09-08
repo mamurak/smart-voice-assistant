@@ -16,18 +16,6 @@ Flags: `-n NS` · `-f/--force` (reinstall even if healthy) · `--registry REPO`
 (prebuilt images, no on-cluster build) · `--sequential` · `-y/--yes` ·
 `--timeout SECONDS`.
 
-## Two deploy modes
-
-1. **On-cluster build** (default) — `BuildConfig` → internal registry. Requires a
-   Managed internal registry.
-2. **Prebuilt-image** (`--registry quay.io/hasan_badawy_ai`) — for
-   **registry-less / disconnected** clusters. Skips builds, pins Deployments to the
-   external image, and auto-creates a pull secret from local `podman` login if the
-   repo is private. Build+push first with `build-push.sh -r <repo>`.
-
-Preflight auto-detects which is possible (reports internal-registry
-`managementState`).
-
 ## Parallel by default
 
 `deploy_all()` backgrounds models + Supertonic + web UI so builds overlap the
