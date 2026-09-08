@@ -3,37 +3,11 @@
 # Apply with:  oc apply -f supertonic.yaml -n <namespace>
 # then:        oc start-build supertonic --from-dir=../supertonic --follow -n <namespace>
 ---
-apiVersion: image.openshift.io/v1
-kind: ImageStream
-metadata:
-  name: supertonic
-  labels: { app: supertonic }
----
-apiVersion: build.openshift.io/v1
-kind: BuildConfig
-metadata:
-  name: supertonic
-  labels: { app: supertonic }
-spec:
-  source:
-    type: Binary
-  strategy:
-    type: Docker
-    dockerStrategy:
-      dockerfilePath: Dockerfile
-  output:
-    to:
-      kind: ImageStreamTag
-      name: supertonic:latest
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: supertonic
   labels: { app: supertonic }
-  annotations:
-    image.openshift.io/triggers: |
-      [{"from":{"kind":"ImageStreamTag","name":"supertonic:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"tts\")].image"}]
 spec:
   replicas: 1
   strategy: { type: Recreate }   # never run old+new pods together (avoids test races)
@@ -48,7 +22,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: tts
-          image: supertonic:latest   # patched by the ImageStream trigger
+          image: quay.io/hasan_badawy_ai/supertonic:v1.0.0
           imagePullPolicy: Always     # :latest — always re-pull the new push on restart
           ports:
             - { name: http, containerPort: 7788 }
